@@ -52,15 +52,16 @@ func CreateMenu() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
+
+		menu.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		menu.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		menu.ID = primitive.NewObjectID() // try
+		menu.Menu_id = menu.ID.Hex()
 		validationError := validate.Struct(menu)
 		if validationError != nil {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, validationError.Error())
 		}
-		menu.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		menu.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		menu.ID = primitive.NewObjectID() // try
-		menu.Menu_id = menu.ID.Hex()
 		result, insertErr := menuCollection.InsertOne(ctx, &menu)
 		if insertErr != nil {
 			defer cancel()
@@ -86,11 +87,7 @@ func UpdateMenu() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
-		validationError := validate.Struct(menu)
-		if validationError != nil {
-			defer cancel()
-			return c.JSON(http.StatusBadRequest, validationError.Error())
-		}
+
 		if menu.Start_Date != nil && menu.End_Date != nil {
 			if !inTimeSpan(*menu.Start_Date, *menu.End_Date) {
 				defer cancel()
@@ -98,6 +95,11 @@ func UpdateMenu() echo.HandlerFunc {
 			}
 		}
 		menu.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		validationError := validate.Struct(menu)
+		if validationError != nil {
+			defer cancel()
+			return c.JSON(http.StatusBadRequest, validationError.Error())
+		}
 		result, updateErr := menuCollection.UpdateOne(ctx, bson.M{"menu_id": menuId}, bson.D{{"$set", &menu}})
 		if updateErr != nil {
 			defer cancel()

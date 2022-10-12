@@ -1,21 +1,79 @@
 package controller
 
-/* func GetUsers() echo.HandlerFunc {
-	return func(c echo.Context) error {
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"rms/helper"
+	"rms/model"
+	"strconv"
+	"time"
 
+	"github.com/labstack/echo/v4"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+)
+
+func GetUsers() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		recordPerPage, err := strconv.Atoi(c.QueryParam("recordPerPage"))
+		if err != nil || recordPerPage < 1 {
+			recordPerPage = 10
+		}
+
+		page, err1 := strconv.Atoi(c.QueryParam("page"))
+		if err1 != nil || page < 1 {
+			page = 1
+		}
+
+		startIndex := (page - 1) * recordPerPage
+		startIndex, err = strconv.Atoi(c.QueryParam("startIndex"))
+
+		matchStage := bson.D{{"$match", bson.D{{}}}}
+		projectStage := bson.D{
+			{"$project", bson.D{
+				{"_id", 0},
+				{"total_count", 1},
+				{"user_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
+			}}}
+
+		result, err := userCollection.Aggregate(ctx, mongo.Pipeline{
+			matchStage, projectStage})
+		defer cancel()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, "error occured while listing user items")
+		}
+
+		var allUsers []bson.M
+		if err = result.All(ctx, &allUsers); err != nil {
+			log.Fatal(err)
+		}
+		return c.JSON(http.StatusOK, allUsers[0])
 	}
 }
 
 func GetUser() echo.HandlerFunc {
 	return func(c echo.Context) error {
-
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		userId := c.QueryParam("user_id")
+		var user model.User
+		err := userCollection.FindOne(ctx, bson.M{"user_id": userId}).Decode(&user)
+		if err != nil {
+			defer cancel()
+			return c.JSON(http.StatusInternalServerError, "error occured while listing users")
+		}
+		defer cancel()
+		return c.JSON(http.StatusOK, user)
 	}
 }
 
 func Signup() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		// first initialize private user for password validation
 		var userPrivate model.UserPrivate
 		if err := c.Bind(&userPrivate); err != nil {
@@ -28,17 +86,28 @@ func Signup() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, validationError.Error())
 		}
-		var count int64
-		repo.Model(&model.User{}).Where("email = ?", userPrivate.Email).Count(&count)
-
+		count, err := userCollection.CountDocuments(ctx, bson.M{"email": userPrivate.Email})
+		if err != nil {
+			defer cancel()
+			return c.JSON(http.StatusBadRequest, "user does not exist")
+		}
 		if count > 0 {
 			defer cancel()
 			return c.JSON(http.StatusConflict, "email already taken")
 		}
 		userPrivate.HashPassword()
+		userPrivate.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		userPrivate.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		userPrivate.ID = primitive.NewObjectID()
+		userPrivate.User_id = userPrivate.ID.Hex()
 		user := userPrivate.User
-		repo.Save(&user)
-		jwtToken, err := helper.GenerateJWT(fmt.Sprint(userPrivate.ID), *userPrivate.Name, *userPrivate.Email)
+		_, err = userCollection.InsertOne(ctx, user)
+		if err != nil {
+			defer cancel()
+			return c.JSON(http.StatusInternalServerError, "could not save user")
+		}
+
+		jwtToken, err := helper.GenerateJWT(userPrivate.User_id, *userPrivate.First_name, *userPrivate.Email)
 		if err != nil {
 			defer cancel()
 			return c.JSON(http.StatusInternalServerError, "error while generating jwt token")
@@ -51,24 +120,22 @@ func Signup() echo.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, "error while generating jwt token")
 			return err
 		}
-		c.JSON(http.StatusOK, user)
 		defer cancel()
-		return err
+		return c.JSON(http.StatusOK, user)
 	}
-
 }
 
 func Login() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		var user model.UserPrivate
 		var foundUser model.User
 		if err := c.Bind(&user); err != nil {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
-		result := repo.Where("email = ?", user.Email).First(&foundUser)
-		if result.Error != nil {
+		err := userCollection.FindOne(ctx, bson.M{"email": user.Email}).Decode(&foundUser)
+		if err != nil {
 			defer cancel()
 			return c.JSON(http.StatusInternalServerError, "user does not exist")
 		}
@@ -81,7 +148,7 @@ func Login() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, "invalid email or password")
 		}
-		token, err := helper.GenerateJWT(fmt.Sprint(foundUser.ID), *foundUser.Name, *foundUser.Email)
+		token, err := helper.GenerateJWT(fmt.Sprint(foundUser.ID), *foundUser.First_name, *foundUser.Email)
 		if err != nil {
 			defer cancel()
 			return c.JSON(http.StatusInternalServerError, "error while generating token")
@@ -93,9 +160,8 @@ func Login() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusInternalServerError, "could not save the cookie")
 		}
-		c.JSON(http.StatusOK, foundUser)
 		defer cancel()
-		return err
+		return c.JSON(http.StatusOK, foundUser)
 	}
 }
 
@@ -116,9 +182,15 @@ func Logout() echo.HandlerFunc {
 
 func WhoAmI() echo.HandlerFunc {
 	return func(c echo.Context) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		claims := c.Get("current-user").(*helper.SignedDetails)
 		var user model.User
-		repo.Model(&model.User{}).Preload("Products").First(&user, claims.UserID)
+		err := userCollection.FindOne(ctx, bson.M{"user_id": claims.UserID}).Decode(&user)
+		if err != nil {
+			defer cancel()
+			return c.JSON(http.StatusBadRequest, "not logged in")
+		}
+		defer cancel()
 		return c.JSON(http.StatusOK, user)
 	}
-} */
+}

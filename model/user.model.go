@@ -14,11 +14,11 @@ type User struct {
 	Last_name      *string            `json:"last_name" validate:"required,min=2,max=100"`
 	HashedPassword *string            `json:"-"`
 	Email          *string            `json:"email" validate:"email,required"`
-	Phone          *string            `json:"phone" validate:"required"`
+	Phone          *string            `json:"phone"`
 	Avatar         *string            `json:"avatar"`
 	Created_at     time.Time          `json:"created_at"`
 	Updated_at     time.Time          `json:"updated_at"`
-	User_id        *string            `json:"user_id" `
+	User_id        string             `json:"user_id" `
 }
 
 type UserPrivate struct {

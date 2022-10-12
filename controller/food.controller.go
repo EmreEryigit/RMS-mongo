@@ -18,7 +18,6 @@ import (
 func GetFoods() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
 		recordPerPage, err := strconv.Atoi(c.QueryParam("recordPerPage"))
 		if err != nil || recordPerPage < 1 {
 			recordPerPage = 10
@@ -27,23 +26,19 @@ func GetFoods() echo.HandlerFunc {
 		if err != nil || page < 1 {
 			page = 1
 		}
+
 		startIndex := (page - 1) * recordPerPage
-		startIndex, _ = strconv.Atoi(c.QueryParam("startIndex"))
+		startIndex, err = strconv.Atoi(c.QueryParam("startIndex"))
 
 		matchStage := bson.D{{"$match", bson.D{{}}}}
 		groupStage := bson.D{{"$group", bson.D{{"_id", bson.D{{"_id", "null"}}}, {"total_count", bson.D{{"$sum", 1}}}, {"data", bson.D{{"$push", "$$ROOT"}}}}}}
 		projectStage := bson.D{
 			{
 				"$project", bson.D{
-					{"$id", 0},
+					{"_id", 0},
 					{"total_count", 1},
-					{"food_items", bson.D{{
-						"$slice", []interface{}{"$data", startIndex, recordPerPage},
-					}}},
-				},
-			},
-		}
-
+					{"food_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
+				}}}
 		result, err := foodCollection.Aggregate(ctx, mongo.Pipeline{matchStage, groupStage, projectStage})
 		defer cancel()
 		if err != nil {
@@ -51,7 +46,7 @@ func GetFoods() echo.HandlerFunc {
 		}
 		var allFoods []bson.M
 		if err = result.All(ctx, &allFoods); err != nil {
-			log.Fatal(err)
+			log.Fatal(err.Error())
 		}
 		return c.JSON(http.StatusOK, allFoods[0])
 	}
@@ -82,11 +77,6 @@ func CreateFood() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
-		validationError := validate.Struct(food)
-		if validationError != nil {
-			defer cancel()
-			return c.JSON(http.StatusBadRequest, validationError.Error())
-		}
 		err := menuCollection.FindOne(ctx, bson.M{"menu_id": food.Menu_id}).Decode(&menu)
 		defer cancel()
 		if err != nil {
@@ -98,6 +88,11 @@ func CreateFood() echo.HandlerFunc {
 		food.Food_id = food.ID.Hex()
 		var num = toFixed(*food.Price, 2)
 		food.Price = &num
+		validationError := validate.Struct(food)
+		if validationError != nil {
+			defer cancel()
+			return c.JSON(http.StatusBadRequest, validationError.Error())
+		}
 		result, insertErr := foodCollection.InsertOne(ctx, &food)
 		if insertErr != nil {
 			return c.JSON(http.StatusInternalServerError, "food item was not created")
@@ -122,13 +117,12 @@ func UpdateFood() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
+		food.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		validationError := validate.Struct(food)
 		if validationError != nil {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, validationError.Error())
 		}
-
-		food.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		result, updateErr := foodCollection.UpdateOne(ctx, bson.M{"food_id": foodId}, bson.D{{"$set", &food}})
 		if updateErr != nil {
 			defer cancel()

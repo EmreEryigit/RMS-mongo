@@ -3,7 +3,6 @@ package helper
 import (
 	"log"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt"
@@ -12,14 +11,14 @@ import (
 type SignedDetails struct {
 	Email  string
 	Name   string
-	UserID uint
+	UserID string
 	jwt.StandardClaims
 }
 
 var SESSION_KEY = []byte(os.Getenv("SESSION_KEY"))
 
 func GenerateJWT(userId string, name string, email string) (signedToken string, err error) {
-	strUserID, err := strconv.Atoi(userId)
+
 	if err != nil {
 		log.Panic(err)
 		return
@@ -27,12 +26,11 @@ func GenerateJWT(userId string, name string, email string) (signedToken string, 
 	claims := SignedDetails{
 		Email:  email,
 		Name:   name,
-		UserID: uint(strUserID),
+		UserID: userId,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(time.Hour * time.Duration(1)).Unix(),
 		},
 	}
-
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(SESSION_KEY)
 	if err != nil {
 		log.Panic(err)

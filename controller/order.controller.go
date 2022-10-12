@@ -55,11 +55,7 @@ func CreateOrder() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
-		validationError := validate.Struct(order)
-		if validationError != nil {
-			defer cancel()
-			return c.JSON(http.StatusBadRequest, validationError.Error())
-		}
+
 		err := tableCollection.FindOne(ctx, bson.M{"table_id": order.Table_id}).Decode(&table)
 		if err != nil {
 			defer cancel()
@@ -69,6 +65,12 @@ func CreateOrder() echo.HandlerFunc {
 		order.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		order.ID = primitive.NewObjectID() // try
 		order.Order_id = order.ID.Hex()
+		order.Order_Date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		validationError := validate.Struct(order)
+		if validationError != nil {
+			defer cancel()
+			return c.JSON(http.StatusBadRequest, validationError.Error())
+		}
 		result, insertErr := orderCollection.InsertOne(ctx, &order)
 		if insertErr != nil {
 			defer cancel()
@@ -93,12 +95,12 @@ func UpdateOrder() echo.HandlerFunc {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, err.Error())
 		}
+		order.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		validationError := validate.Struct(order)
 		if validationError != nil {
 			defer cancel()
 			return c.JSON(http.StatusBadRequest, validationError.Error())
 		}
-		order.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		result, updateErr := orderCollection.UpdateOne(ctx, bson.M{"order_id": orderId}, bson.D{{"$set", &order}})
 		if updateErr != nil {
 			defer cancel()

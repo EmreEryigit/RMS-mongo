@@ -3,15 +3,12 @@ package main
 import (
 	"log"
 	"os"
-	"rms/database"
+	"rms/middleware"
 	"rms/route"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
-	"go.mongodb.org/mongo-driver/mongo"
 )
-
-var foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
 
 func main() {
 	err := godotenv.Load(".env")
@@ -19,25 +16,30 @@ func main() {
 		log.Fatal("error loading .env file")
 	}
 	port := os.Getenv("PORT")
-	/* if port == "" {
+	if port == "" {
 		port = "3000"
-	} */
+	}
 	r := echo.New()
 
-	// userG := r.Group("/users")
+	userG := r.Group("/users")
 	foodG := r.Group("/foods")
-	// invoiceG := r.Group("/invoices")
+	invoiceG := r.Group("/invoices")
 	menuG := r.Group("/menus")
-	// orderG := r.Group("/orders")
-	// tableG := r.Group("/tables")
-	// orderItemG := r.Group("/orderItems")
+	orderG := r.Group("/orders")
+	tableG := r.Group("/tables")
+	orderItemG := r.Group("/orderItems")
 
-	// route.UserRoute(userG)
+	r.Use(middleware.CurrentUser)
+
+	route.UserRoute(userG)
+
+	r.Use(middleware.Authenticate)
+
 	route.FoodRoute(foodG)
-	// route.InvoiceRoute(invoiceG)
+	route.InvoiceRoute(invoiceG)
 	route.MenuRoute(menuG)
-	// route.OrderRoute(orderG)
-	// route.TableRoute(tableG)
-	// route.OrderItemRoute(orderItemG)
+	route.OrderRoute(orderG)
+	route.TableRoute(tableG)
+	route.OrderItemRoute(orderItemG)
 	r.Logger.Fatal(r.Start(":" + port))
 }

@@ -16,3 +16,8 @@ type OrderItem struct {
 	Order_item_id string             `json:"order_item_id"`
 	Order_id      string             `json:"order_id" validate:"required"`
 }
+
+type OrderItemPack struct {
+	Table_id    *string
+	Order_items []OrderItem
+}
